@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: secure-ledger
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ledger}
+    username: ${DB_USERNAME:ledger}
+    password: ${DB_PASSWORD:ledger}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+    generator:
+      write-bigdecimal-as-plain: true
+
+  mvc:
+    format:
+      date: iso
+
+  data:
+    web:
+      pageable:
+        default-page-size: 10
+        max-page-size: 100
+        one-indexed-parameters: true
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  jwt:
+    # base64 key, minimum 256 bits, make one with: openssl rand -base64 32
+    secret: ${JWT_SECRET:ZGV2LW9ubHktand0LXNlY3JldC1kby1ub3QtdXNlLWluLXByb2R1Y3Rpb24hIQ==}
+    issuer: secure-ledger
+    audience: secure-ledger-api
+    ttl: 15m
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:3000
+
+springdoc:
+  swagger-ui:
+    persist-authorization: true

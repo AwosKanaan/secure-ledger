@@ -1,0 +1,171 @@
+{
+  "info": {
+    "name": "Secure Ledger API",
+    "description": "Run \"Login as Gilbert\" first; it stores the JWT in the {{token}} collection variable used by every other request. Seed users (dev profile): gilbert@gmail.com / gilbert123 and bob@ledger.test / Ledger-Test-2026!",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" },
+    { "key": "transactionId", "value": "" },
+    { "key": "idempotencyKey", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login as Gilbert",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('token', pm.response.json().accessToken);"
+            ] }
+          }],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/ledger/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"gilbert@gmail.com\",\n  \"password\": \"gilbert123\"\n}" }
+          }
+        },
+        {
+          "name": "Login with wrong password (401)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"] }
+          }],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/ledger/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"gilbert@gmail.com\",\n  \"password\": \"wrong-password\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Create transaction",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));"] }
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                "pm.collectionVariables.set('transactionId', pm.response.json().id);"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "url": "{{baseUrl}}/ledger/transactions",
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"125.50\",\n  \"currency\": \"EUR\",\n  \"description\": \"Invoice 2026-0042\",\n  \"counterpartyIban\": \"DE89 3704 0044 0532 0130 00\"\n}" }
+          }
+        },
+        {
+          "name": "Retry same transaction (idempotent replay)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Returns the original transaction, not a new one', () => {",
+              "  pm.response.to.have.status(201);",
+              "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('transactionId'));",
+              "});"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "url": "{{baseUrl}}/ledger/transactions",
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"125.50\",\n  \"currency\": \"EUR\",\n  \"description\": \"Invoice 2026-0042\",\n  \"counterpartyIban\": \"DE89 3704 0044 0532 0130 00\"\n}" }
+          }
+        },
+        {
+          "name": "Create transaction without Idempotency-Key",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["pm.test('201 Created', () => pm.response.to.have.status(201));"] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/ledger/transactions",
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"20.00\",\n  \"currency\": \"EUR\",\n  \"description\": \"No idempotency key\",\n  \"counterpartyIban\": \"NL91 ABNA 0417 1643 00\"\n}" }
+          }
+        },
+        {
+          "name": "Create invalid transaction (422)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["pm.test('422 with field errors', () => { pm.response.to.have.status(422); pm.expect(pm.response.json().errors).to.have.length(3); });"] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "url": "{{baseUrl}}/ledger/transactions",
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"-5.00\",\n  \"currency\": \"ABC\",\n  \"counterpartyIban\": \"DE89370400440532013001\"\n}" }
+          }
+        },
+        {
+          "name": "History (newest first)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ledger/transactions?page=1&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["ledger", "transactions"],
+              "query": [{ "key": "page", "value": "1" }, { "key": "size", "value": "10" }]
+            }
+          }
+        },
+        {
+          "name": "History in date range, sorted by amount",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/ledger/transactions?startDate=2026-01-01&endDate=2026-03-31&sort=amount,asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["ledger", "transactions"],
+              "query": [
+                { "key": "startDate", "value": "2026-01-01" },
+                { "key": "endDate", "value": "2026-03-31" },
+                { "key": "sort", "value": "amount,asc" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "History without token (401)",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"] }
+          }],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/ledger/transactions" }
+        }
+      ]
+    }
+  ]
+}
